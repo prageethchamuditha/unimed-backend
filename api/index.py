@@ -18,15 +18,6 @@ labassistants_collection = db["labassistants"]
 reset_requests_collection = db["reset_requests"]
 
 # ─────────────────────────────────────────────
-#  Hash indexes for O(1) lookup speed
-# ─────────────────────────────────────────────
-students_collection.create_index("indexNumber", unique=True)
-doctors_collection.create_index("doctorId",     unique=True)
-labassistants_collection.create_index("labId",  unique=True)
-reset_requests_collection.create_index("indexNumber")
-
-
-# ─────────────────────────────────────────────
 #  Helper: verify password (handles plain-text
 #  legacy passwords and auto-upgrades to hash)
 # ─────────────────────────────────────────────
