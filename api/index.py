@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +15,35 @@ db = client["unimed_db"]
 students_collection      = db["students"]
 doctors_collection       = db["doctors"]
 labassistants_collection = db["labassistants"]
+
+# ─────────────────────────────────────────────
+#  Helper: verify password (handles plain-text
+#  legacy passwords and auto-upgrades to hash)
+# ─────────────────────────────────────────────
+
+def _verify_and_upgrade(collection, query, field, incoming_password):
+    """
+    Returns (True, doc) if password matches, (False, doc) otherwise.
+    If the stored value is plain-text and matches, it is transparently
+    upgraded to a bcrypt hash in the DB.
+    """
+    doc = collection.find_one(query)
+    if not doc:
+        return False, None
+    stored = doc.get(field, "")
+
+    # Check if stored value is already a werkzeug hash
+    if stored.startswith("pbkdf2:") or stored.startswith("scrypt:"):
+        ok = check_password_hash(stored, incoming_password)
+    else:
+        # Legacy plain-text — compare directly, then upgrade
+        ok = (stored == incoming_password)
+        if ok:
+            new_hash = generate_password_hash(incoming_password)
+            collection.update_one(query, {"$set": {field: new_hash}})
+
+    return ok, doc
+
 
 # ─────────────────────────────────────────────
 #  STUDENT ENDPOINTS
@@ -48,7 +78,6 @@ def register_student():
     index_number = data.get("indexNumber")
     existing = students_collection.find_one({"indexNumber": index_number})
     if existing:
-        # Update name only (don't overwrite password or records)
         students_collection.update_one(
             {"indexNumber": index_number},
             {"$set": {"name": data.get("name", existing.get("name", ""))}}
@@ -57,7 +86,7 @@ def register_student():
     new_student = {
         "indexNumber":    index_number,
         "name":           data.get("name", ""),
-        "password":       "student123",   # default password
+        "password":       generate_password_hash("student123"),   # hashed default
         "medicalRecords": []
     }
     students_collection.insert_one(new_student)
@@ -65,30 +94,38 @@ def register_student():
 
 @app.route('/student/<index_number>/login', methods=['POST'])
 def student_login(index_number):
-    """Verify student password."""
     data = request.json
-    student = students_collection.find_one({"indexNumber": index_number})
-    if not student:
+    ok, student = _verify_and_upgrade(
+        students_collection,
+        {"indexNumber": index_number},
+        "password",
+        data.get("password", "")
+    )
+    if student is None:
         return jsonify({"error": "Not found"}), 404
-    stored_pwd = student.get("password", "student123")
-    if stored_pwd == data.get("password"):
+    if ok:
         return jsonify({"message": "Login successful", "name": student.get("name", "")}), 200
     return jsonify({"error": "Incorrect password"}), 401
 
 @app.route('/student/<index_number>/password', methods=['PUT'])
 def update_student_password(index_number):
-    """Change student password."""
     data = request.json
-    old_pwd = data.get("oldPassword")
-    new_pwd = data.get("newPassword")
-    student = students_collection.find_one({"indexNumber": index_number})
-    if not student:
+    ok, student = _verify_and_upgrade(
+        students_collection,
+        {"indexNumber": index_number},
+        "password",
+        data.get("oldPassword", "")
+    )
+    if student is None:
         return jsonify({"error": "Not found"}), 404
-    stored_pwd = student.get("password", "student123")
-    if stored_pwd != old_pwd:
+    if not ok:
         return jsonify({"error": "Incorrect current password"}), 401
-    students_collection.update_one({"indexNumber": index_number}, {"$set": {"password": new_pwd}})
+    students_collection.update_one(
+        {"indexNumber": index_number},
+        {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
+    )
     return jsonify({"message": "Password updated"}), 200
+
 
 # ─────────────────────────────────────────────
 #  DOCTOR ENDPOINTS
@@ -117,7 +154,7 @@ def register_doctor():
     new_doctor = {
         "doctorId":  doctor_id,
         "name":      data.get("name", ""),
-        "password":  data.get("password", "doctor123"),
+        "password":  generate_password_hash(data.get("password", "doctor123")),  # hashed
         "createdAt": datetime.now()
     }
     doctors_collection.insert_one(new_doctor)
@@ -126,25 +163,37 @@ def register_doctor():
 @app.route('/doctors/<doctor_id>/login', methods=['POST'])
 def doctor_login(doctor_id):
     data = request.json
-    doctor = doctors_collection.find_one({"doctorId": doctor_id})
-    if not doctor:
+    ok, doctor = _verify_and_upgrade(
+        doctors_collection,
+        {"doctorId": doctor_id},
+        "password",
+        data.get("password", "")
+    )
+    if doctor is None:
         return jsonify({"error": "Not found"}), 404
-    if doctor.get("password") == data.get("password"):
+    if ok:
         return jsonify({"message": "Login successful", "name": doctor.get("name", "")}), 200
     return jsonify({"error": "Incorrect password"}), 401
 
 @app.route('/doctors/<doctor_id>/password', methods=['PUT'])
 def update_doctor_password(doctor_id):
     data = request.json
-    old_pwd = data.get("oldPassword")
-    new_pwd = data.get("newPassword")
-    doctor = doctors_collection.find_one({"doctorId": doctor_id})
-    if not doctor:
+    ok, doctor = _verify_and_upgrade(
+        doctors_collection,
+        {"doctorId": doctor_id},
+        "password",
+        data.get("oldPassword", "")
+    )
+    if doctor is None:
         return jsonify({"error": "Not found"}), 404
-    if doctor.get("password") != old_pwd:
+    if not ok:
         return jsonify({"error": "Incorrect current password"}), 401
-    doctors_collection.update_one({"doctorId": doctor_id}, {"$set": {"password": new_pwd}})
+    doctors_collection.update_one(
+        {"doctorId": doctor_id},
+        {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
+    )
     return jsonify({"message": "Password updated"}), 200
+
 
 # ─────────────────────────────────────────────
 #  LAB ASSISTANT ENDPOINTS
@@ -173,7 +222,7 @@ def register_labassistant():
     new_assistant = {
         "labId":     lab_id,
         "name":      data.get("name", ""),
-        "password":  data.get("password", "lab123"),
+        "password":  generate_password_hash(data.get("password", "lab123")),  # hashed
         "createdAt": datetime.now()
     }
     labassistants_collection.insert_one(new_assistant)
@@ -182,25 +231,37 @@ def register_labassistant():
 @app.route('/labassistant/<lab_id>/login', methods=['POST'])
 def labassistant_login(lab_id):
     data = request.json
-    assistant = labassistants_collection.find_one({"labId": lab_id})
-    if not assistant:
+    ok, assistant = _verify_and_upgrade(
+        labassistants_collection,
+        {"labId": lab_id},
+        "password",
+        data.get("password", "")
+    )
+    if assistant is None:
         return jsonify({"error": "Not found"}), 404
-    if assistant.get("password") == data.get("password"):
+    if ok:
         return jsonify({"message": "Login successful", "name": assistant.get("name", "")}), 200
     return jsonify({"error": "Incorrect password"}), 401
 
 @app.route('/labassistant/<lab_id>/password', methods=['PUT'])
 def update_labassistant_password(lab_id):
     data = request.json
-    old_pwd = data.get("oldPassword")
-    new_pwd = data.get("newPassword")
-    assistant = labassistants_collection.find_one({"labId": lab_id})
-    if not assistant:
+    ok, assistant = _verify_and_upgrade(
+        labassistants_collection,
+        {"labId": lab_id},
+        "password",
+        data.get("oldPassword", "")
+    )
+    if assistant is None:
         return jsonify({"error": "Not found"}), 404
-    if assistant.get("password") != old_pwd:
+    if not ok:
         return jsonify({"error": "Incorrect current password"}), 401
-    labassistants_collection.update_one({"labId": lab_id}, {"$set": {"password": new_pwd}})
+    labassistants_collection.update_one(
+        {"labId": lab_id},
+        {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
+    )
     return jsonify({"message": "Password updated"}), 200
+
 
 # ─────────────────────────────────────────────
 
