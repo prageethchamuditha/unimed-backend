@@ -11,17 +11,17 @@ MONGO_URI = os.environ.get("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["unimed_db"]
 
-students_collection    = db["students"]
-doctors_collection     = db["doctors"]
+students_collection      = db["students"]
+doctors_collection       = db["doctors"]
 labassistants_collection = db["labassistants"]
 
 # ─────────────────────────────────────────────
-#  STUDENT ENDPOINTS  (unchanged)
+#  STUDENT ENDPOINTS
 # ─────────────────────────────────────────────
 
 @app.route('/student/<index_number>', methods=['GET'])
 def retrieve_student(index_number):
-    student = students_collection.find_one({"indexNumber": index_number}, {"_id": 0})
+    student = students_collection.find_one({"indexNumber": index_number}, {"_id": 0, "password": 0})
     if student:
         return jsonify(student), 200
     return jsonify({"error": "Not found"}), 404
@@ -45,13 +45,50 @@ def save_visit_details(index_number):
 @app.route('/student', methods=['POST'])
 def register_student():
     data = request.json
+    index_number = data.get("indexNumber")
+    existing = students_collection.find_one({"indexNumber": index_number})
+    if existing:
+        # Update name only (don't overwrite password or records)
+        students_collection.update_one(
+            {"indexNumber": index_number},
+            {"$set": {"name": data.get("name", existing.get("name", ""))}}
+        )
+        return jsonify({"message": "Updated"}), 200
     new_student = {
-        "indexNumber":    data.get("indexNumber"),
-        "name":           data.get("name"),
+        "indexNumber":    index_number,
+        "name":           data.get("name", ""),
+        "password":       "student123",   # default password
         "medicalRecords": []
     }
     students_collection.insert_one(new_student)
     return jsonify({"message": "Created"}), 201
+
+@app.route('/student/<index_number>/login', methods=['POST'])
+def student_login(index_number):
+    """Verify student password."""
+    data = request.json
+    student = students_collection.find_one({"indexNumber": index_number})
+    if not student:
+        return jsonify({"error": "Not found"}), 404
+    stored_pwd = student.get("password", "student123")
+    if stored_pwd == data.get("password"):
+        return jsonify({"message": "Login successful", "name": student.get("name", "")}), 200
+    return jsonify({"error": "Incorrect password"}), 401
+
+@app.route('/student/<index_number>/password', methods=['PUT'])
+def update_student_password(index_number):
+    """Change student password."""
+    data = request.json
+    old_pwd = data.get("oldPassword")
+    new_pwd = data.get("newPassword")
+    student = students_collection.find_one({"indexNumber": index_number})
+    if not student:
+        return jsonify({"error": "Not found"}), 404
+    stored_pwd = student.get("password", "student123")
+    if stored_pwd != old_pwd:
+        return jsonify({"error": "Incorrect current password"}), 401
+    students_collection.update_one({"indexNumber": index_number}, {"$set": {"password": new_pwd}})
+    return jsonify({"message": "Password updated"}), 200
 
 # ─────────────────────────────────────────────
 #  DOCTOR ENDPOINTS
@@ -59,7 +96,6 @@ def register_student():
 
 @app.route('/doctors', methods=['GET'])
 def list_doctors():
-    """List all doctors (passwords excluded)."""
     doctors = list(doctors_collection.find({}, {"_id": 0, "password": 0}))
     return jsonify(doctors), 200
 
@@ -72,7 +108,6 @@ def retrieve_doctor(doctor_id):
 
 @app.route('/doctors', methods=['POST'])
 def register_doctor():
-    """Register a new doctor account."""
     data = request.json
     doctor_id = data.get("doctorId")
     if not doctor_id:
@@ -80,9 +115,9 @@ def register_doctor():
     if doctors_collection.find_one({"doctorId": doctor_id}):
         return jsonify({"error": "Doctor ID already exists"}), 409
     new_doctor = {
-        "doctorId": doctor_id,
-        "name":     data.get("name", ""),
-        "password": data.get("password", "doctor123"),   # default password
+        "doctorId":  doctor_id,
+        "name":      data.get("name", ""),
+        "password":  data.get("password", "doctor123"),
         "createdAt": datetime.now()
     }
     doctors_collection.insert_one(new_doctor)
@@ -90,7 +125,6 @@ def register_doctor():
 
 @app.route('/doctors/<doctor_id>/login', methods=['POST'])
 def doctor_login(doctor_id):
-    """Verify doctor password."""
     data = request.json
     doctor = doctors_collection.find_one({"doctorId": doctor_id})
     if not doctor:
@@ -101,7 +135,6 @@ def doctor_login(doctor_id):
 
 @app.route('/doctors/<doctor_id>/password', methods=['PUT'])
 def update_doctor_password(doctor_id):
-    """Change doctor password."""
     data = request.json
     old_pwd = data.get("oldPassword")
     new_pwd = data.get("newPassword")
@@ -119,7 +152,6 @@ def update_doctor_password(doctor_id):
 
 @app.route('/labassistant', methods=['GET'])
 def list_labassistants():
-    """List all lab assistants (passwords excluded)."""
     assistants = list(labassistants_collection.find({}, {"_id": 0, "password": 0}))
     return jsonify(assistants), 200
 
@@ -132,7 +164,6 @@ def retrieve_labassistant(lab_id):
 
 @app.route('/labassistant', methods=['POST'])
 def register_labassistant():
-    """Register a new lab assistant account."""
     data = request.json
     lab_id = data.get("labId")
     if not lab_id:
@@ -142,7 +173,7 @@ def register_labassistant():
     new_assistant = {
         "labId":     lab_id,
         "name":      data.get("name", ""),
-        "password":  data.get("password", "lab123"),    # default password
+        "password":  data.get("password", "lab123"),
         "createdAt": datetime.now()
     }
     labassistants_collection.insert_one(new_assistant)
@@ -150,7 +181,6 @@ def register_labassistant():
 
 @app.route('/labassistant/<lab_id>/login', methods=['POST'])
 def labassistant_login(lab_id):
-    """Verify lab assistant password."""
     data = request.json
     assistant = labassistants_collection.find_one({"labId": lab_id})
     if not assistant:
@@ -161,7 +191,6 @@ def labassistant_login(lab_id):
 
 @app.route('/labassistant/<lab_id>/password', methods=['PUT'])
 def update_labassistant_password(lab_id):
-    """Change lab assistant password."""
     data = request.json
     old_pwd = data.get("oldPassword")
     new_pwd = data.get("newPassword")
