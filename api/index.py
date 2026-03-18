@@ -17,6 +17,14 @@ doctors_collection       = db["doctors"]
 labassistants_collection = db["labassistants"]
 
 # ─────────────────────────────────────────────
+#  Hash indexes for O(1) lookup speed
+# ─────────────────────────────────────────────
+students_collection.create_index("indexNumber", unique=True)
+doctors_collection.create_index("doctorId",     unique=True)
+labassistants_collection.create_index("labId",  unique=True)
+
+
+# ─────────────────────────────────────────────
 #  Helper: verify password (handles plain-text
 #  legacy passwords and auto-upgrades to hash)
 # ─────────────────────────────────────────────
