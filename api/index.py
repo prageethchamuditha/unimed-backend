@@ -15,7 +15,14 @@ db = client["unimed_db"]
 students_collection      = db["students"]
 doctors_collection       = db["doctors"]
 labassistants_collection = db["labassistants"]
-reset_requests_collection = db["reset_requests"]
+
+# ─────────────────────────────────────────────
+#  Hash indexes for O(1) lookup speed
+# ─────────────────────────────────────────────
+students_collection.create_index("indexNumber", unique=True)
+doctors_collection.create_index("doctorId",     unique=True)
+labassistants_collection.create_index("labId",  unique=True)
+
 
 # ─────────────────────────────────────────────
 #  Helper: verify password (handles plain-text
@@ -262,117 +269,6 @@ def update_labassistant_password(lab_id):
         {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
     )
     return jsonify({"message": "Password updated"}), 200
-
-
-# ─────────────────────────────────────────────
-#  PASSWORD RESET REQUEST ENDPOINTS
-# ─────────────────────────────────────────────
-
-@app.route('/reset-request', methods=['POST'])
-def submit_reset_request():
-    """Student submits a password reset request with ID card image."""
-    data = request.json
-    index_number = data.get("indexNumber", "").strip()
-    full_name    = data.get("fullName", "").strip()
-    id_card_image = data.get("idCardImage", "")   # base64 data URL
-
-    if not index_number or not full_name or not id_card_image:
-        return jsonify({"error": "indexNumber, fullName and idCardImage are required"}), 400
-
-    # Prevent duplicate pending requests
-    existing = reset_requests_collection.find_one(
-        {"indexNumber": index_number, "status": "pending"}
-    )
-    if existing:
-        return jsonify({"message": "Request already pending"}), 200
-
-    new_request = {
-        "indexNumber":  index_number,
-        "fullName":     full_name,
-        "idCardImage":  id_card_image,
-        "status":       "pending",       # pending | approved | rejected
-        "rejectionReason": "",
-        "submittedAt":  datetime.now()
-    }
-    result = reset_requests_collection.insert_one(new_request)
-    return jsonify({"message": "Reset request submitted", "id": str(result.inserted_id)}), 201
-
-
-@app.route('/reset-requests', methods=['GET'])
-def list_reset_requests():
-    """Lab assistant fetches all reset requests (newest first)."""
-    from bson import ObjectId
-    status_filter = request.args.get("status", "pending")
-    query = {} if status_filter == "all" else {"status": status_filter}
-    requests_list = list(
-        reset_requests_collection.find(query, {"idCardImage": 0})
-        .sort("submittedAt", -1)
-    )
-    # Convert ObjectId to string for JSON
-    for r in requests_list:
-        r["_id"] = str(r["_id"])
-    return jsonify(requests_list), 200
-
-
-@app.route('/reset-requests/<request_id>', methods=['GET'])
-def get_reset_request(request_id):
-    """Get a single reset request including the ID card image."""
-    from bson import ObjectId
-    try:
-        req = reset_requests_collection.find_one({"_id": ObjectId(request_id)})
-    except Exception:
-        return jsonify({"error": "Invalid ID"}), 400
-    if not req:
-        return jsonify({"error": "Not found"}), 404
-    req["_id"] = str(req["_id"])
-    return jsonify(req), 200
-
-
-@app.route('/reset-requests/<request_id>/approve', methods=['POST'])
-def approve_reset_request(request_id):
-    """Lab assistant approves request — resets student password to default."""
-    from bson import ObjectId
-    try:
-        req = reset_requests_collection.find_one({"_id": ObjectId(request_id)})
-    except Exception:
-        return jsonify({"error": "Invalid ID"}), 400
-    if not req:
-        return jsonify({"error": "Request not found"}), 404
-
-    # Reset the student's password to default
-    students_collection.update_one(
-        {"indexNumber": req["indexNumber"]},
-        {"$set": {"password": generate_password_hash("student123")}}
-    )
-    # Mark request as approved
-    reset_requests_collection.update_one(
-        {"_id": ObjectId(request_id)},
-        {"$set": {"status": "approved", "resolvedAt": datetime.now()}}
-    )
-    return jsonify({"message": "Approved — password reset to student123"}), 200
-
-
-@app.route('/reset-requests/<request_id>/reject', methods=['POST'])
-def reject_reset_request(request_id):
-    """Lab assistant rejects the reset request."""
-    from bson import ObjectId
-    data = request.json or {}
-    try:
-        req = reset_requests_collection.find_one({"_id": ObjectId(request_id)})
-    except Exception:
-        return jsonify({"error": "Invalid ID"}), 400
-    if not req:
-        return jsonify({"error": "Request not found"}), 404
-
-    reset_requests_collection.update_one(
-        {"_id": ObjectId(request_id)},
-        {"$set": {
-            "status": "rejected",
-            "rejectionReason": data.get("reason", ""),
-            "resolvedAt": datetime.now()
-        }}
-    )
-    return jsonify({"message": "Request rejected"}), 200
 
 
 # ─────────────────────────────────────────────
