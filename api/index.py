@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 CORS(app)
 
-MONGO_URI = os.environ.get("mongodb+srv://morashiftuom_db_user:<db_password>@morashift.jqcplby.mongodb.net/?appName=morashift")
+MONGO_URI = os.environ.get("mongodb+srv://morashiftuom_db_user:I4bv4bmEr2jyazJ4@morashift.jqcplby.mongodb.net/?appName=morashift")
 
 # Lazy DB initialisation — avoids crashing the Vercel serverless
 # function at module load time when env vars may not yet be injected.
