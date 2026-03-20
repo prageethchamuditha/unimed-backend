@@ -8,7 +8,15 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/student(.*)",
+      "dest": "backend/index.py"
+    },
+    {
+      "src": "/doctors(.*)",
+      "dest": "backend/index.py"
+    },
+    {
+      "src": "/labassistant(.*)",
       "dest": "backend/index.py"
     }
   ]
