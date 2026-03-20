@@ -7,10 +7,14 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
-MONGO_URI = os.environ.get("mongodb+srv://morashiftuom_db_user:I4bv4bmEr2jyazJ4@morashift.jqcplby.mongodb.net/?appName=morashift")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://morashiftuom_db_user:I4bv4bmEr2jyazJ4@morashift.jqcplby.mongodb.net/?appName=morashift")
 client = MongoClient(MONGO_URI)
 db = client["unimed_db"]
 students_collection = db["students"]
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "UniMed API is running"}), 200
 
 @app.route('/student/<index_number>', methods=['GET'])
 def retrieve_student(index_number):
