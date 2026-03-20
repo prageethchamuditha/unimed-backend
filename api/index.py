@@ -8,20 +8,40 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 CORS(app)
 
-MONGO_URI = os.environ.get("MONGO_URI")
-client = MongoClient(MONGO_URI)
-db = client["unimed_db"]
+MONGO_URI = os.environ.get("mongodb+srv://morashiftuom_db_user:<db_password>@morashift.jqcplby.mongodb.net/?appName=morashift")
 
-students_collection      = db["students"]
-doctors_collection       = db["doctors"]
-labassistants_collection = db["labassistants"]
+# Lazy DB initialisation — avoids crashing the Vercel serverless
+# function at module load time when env vars may not yet be injected.
+_client = None
+_db = None
+students_collection      = None
+doctors_collection       = None
+labassistants_collection = None
 
-# ─────────────────────────────────────────────
-#  Hash indexes for O(1) lookup speed
-# ─────────────────────────────────────────────
-students_collection.create_index("indexNumber", unique=True)
-doctors_collection.create_index("doctorId",     unique=True)
-labassistants_collection.create_index("labId",  unique=True)
+def _init_db():
+    global _client, _db, students_collection, doctors_collection, labassistants_collection
+    if _db is not None:
+        return  # already initialised
+    if not MONGO_URI:
+        raise RuntimeError("MONGO_URI environment variable is not set.")
+    _client = MongoClient(MONGO_URI)
+    _db = _client["unimed_db"]
+    students_collection      = _db["students"]
+    doctors_collection       = _db["doctors"]
+    labassistants_collection = _db["labassistants"]
+    # ── Hash indexes for O(1) lookup speed ──
+    students_collection.create_index("indexNumber", unique=True)
+    doctors_collection.create_index("doctorId",     unique=True)
+    labassistants_collection.create_index("labId",  unique=True)
+
+@app.before_request
+def ensure_db():
+    try:
+        _init_db()
+    except RuntimeError as e:
+        from flask import abort
+        app.logger.error(str(e))
+        abort(500, description=str(e))
 
 
 # ─────────────────────────────────────────────
@@ -59,6 +79,7 @@ def _verify_and_upgrade(collection, query, field, incoming_password):
 
 @app.route('/student/<index_number>', methods=['GET'])
 def retrieve_student(index_number):
+    index_number = index_number.upper()
     student = students_collection.find_one({"indexNumber": index_number}, {"_id": 0, "password": 0})
     if student:
         return jsonify(student), 200
@@ -66,6 +87,7 @@ def retrieve_student(index_number):
 
 @app.route('/student/<index_number>/record', methods=['POST'])
 def save_visit_details(index_number):
+    index_number = index_number.upper()
     data = request.json
     new_record = {
         "diagnosis":    data.get("diagnosis", ""),
@@ -83,7 +105,7 @@ def save_visit_details(index_number):
 @app.route('/student', methods=['POST'])
 def register_student():
     data = request.json
-    index_number = data.get("indexNumber")
+    index_number = data.get("indexNumber").upper() if data.get("indexNumber") else None
     existing = students_collection.find_one({"indexNumber": index_number})
     if existing:
         students_collection.update_one(
@@ -102,7 +124,21 @@ def register_student():
 
 @app.route('/student/<index_number>/login', methods=['POST'])
 def student_login(index_number):
+    index_number = index_number.upper()
     data = request.json
+    
+    # Auto-registration flow
+    student = students_collection.find_one({"indexNumber": index_number})
+    if not student:
+        new_student = {
+            "indexNumber":    index_number,
+            "name":           "",
+            "password":       generate_password_hash(data.get("password", "")),
+            "medicalRecords": []
+        }
+        students_collection.insert_one(new_student)
+        return jsonify({"message": "Created and logged in", "name": ""}), 200
+
     ok, student = _verify_and_upgrade(
         students_collection,
         {"indexNumber": index_number},
@@ -117,6 +153,7 @@ def student_login(index_number):
 
 @app.route('/student/<index_number>/password', methods=['PUT'])
 def update_student_password(index_number):
+    index_number = index_number.upper()
     data = request.json
     ok, student = _verify_and_upgrade(
         students_collection,
