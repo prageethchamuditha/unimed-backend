@@ -17,7 +17,7 @@ CORS(app)
 SMTP_SERVER = "smtp-relay.brevo.com"
 SMTP_PORT = 587
 SMTP_LOGIN = "a59fd8001@smtp-brevo.com"
-SMTP_PASSWORD = "xsmtpsib-8934e62b2710fea180684de6a52c1439e2a897c142cc7298ca684d2e187210a4-6D7DqMIa5HRXzUev"
+SMTP_PASSWORD = "xsmtpsib-8934e62b2710fea180684de6a52c1439e2a897c142cc7298ca684d2e187210a4-tSyHFEKb23aWXYnu"
 SENDER_EMAIL = "morashiftuom@gmail.com" 
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://morashiftuom_db_user:I4bv4bmEr2jyazJ4@morashift.jqcplby.mongodb.net/?appName=morashift")
