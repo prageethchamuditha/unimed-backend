@@ -52,12 +52,10 @@ def ensure_db():
 def send_uom_verification(student_email, otp_code):
     smtp_server = "smtp-relay.brevo.com"
     port = 587
-    login = "a599c4001@smtp-brevo.com"
-    # SMTP Key as provided
-    password = "xsmtpsib-20c3e967fc356c649e837963f41bbd94f2c3c8910d2174fb6c2d83bf6ae62269-298rUPEp7ysMaOoy" 
-
+    login = "a59fd8001@smtp-brevo.com"
+    password = "xsmtpsib-8934e62b2710fea180684de6a52c1439e2a897c142cc7298ca684d2e187210a4-4Ria6kVadAYzJNmF" 
     msg = MIMEMultipart()
-    msg['From'] = "lakshan1833brf@gmail.com" # Verified sender in Brevo
+    msg['From'] = "morashiftuom@gmaill.com"
     msg['To'] = student_email
     msg['Subject'] = "UniMed Registration Code"
 
