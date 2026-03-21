@@ -53,7 +53,7 @@ def send_uom_verification(student_email, otp_code):
     smtp_server = "smtp-relay.brevo.com"
     port = 587
     login = "a59fd8001@smtp-brevo.com"
-    password = "xsmtpsib-8934e62b2710fea180684de6a52c1439e2a897c142cc7298ca684d2e187210a4-XkPWkfbxO6ltKydE" 
+    password = "xsmtpsib-8934e62b2710fea180684de6a52c1439e2a897c142cc7298ca684d2e187210a4-NHzUvyY3DmqTkmXS" 
     msg = MIMEMultipart()
     msg['From'] = "morashiftuom@gmail.com"
     msg['To'] = student_email
