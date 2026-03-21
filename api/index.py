@@ -1,9 +1,13 @@
 import os
+import random
+import smtplib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 CORS(app)
@@ -55,6 +59,31 @@ def _verify_and_upgrade(collection, query, field, incoming_password):
             collection.update_one(query, {"$set": {field: new_hash}})
 
     return ok, doc
+
+def send_uom_verification(student_email, otp_code):
+    smtp_server = "smtp-relay.brevo.com"
+    port = 587
+    login = "a599c4001@smtp-brevo.com"
+    password = "xsmtpsib-20c3e967fc356c649e837963f41bbd94f2c3c8910d2174fb6c2d83bf6ae62269-kSVNCrf0jByXjoSS" 
+
+    msg = MIMEMultipart()
+    msg['From'] = "lakshan1833brf@gmail.com"
+    msg['To'] = student_email
+    msg['Subject'] = "UniMed Registration Code"
+
+    body = f"Hello, your UniMed verification code is: {otp_code}"
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP(smtp_server, port)
+        server.starttls() 
+        server.login(login, password)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"SMTP Error: {e}")
+        return False
 
 @app.route('/', methods=['GET'])
 def home():
@@ -152,6 +181,20 @@ def update_student_password(index_number):
         {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
     )
     return jsonify({"message": "Password updated"}), 200
+
+@app.route('/student/send-otp', methods=['POST'])
+def handle_otp_request():
+    data = request.get_json()
+    email = data.get('email')
+    
+    otp = str(random.randint(100000, 999999))
+    
+    success = send_uom_verification(email, otp)
+    
+    if success:
+        return jsonify({"message": "OTP sent successfully"}), 200
+    else:
+        return jsonify({"error": "Mail server connection failed"}), 500
 
 @app.route('/doctors', methods=['GET'])
 def list_doctors():
