@@ -65,7 +65,7 @@ def send_uom_verification(student_email, otp_code):
     port = 587
     login = "a599c4001@smtp-brevo.com"
     
-    # This pulls the safe key from Vercel!
+    # This pulls the hidden key securely from Vercel!
     password = os.environ.get("BREVO_SMTP_KEY") 
 
     msg = MIMEMultipart()
@@ -183,6 +183,20 @@ def update_student_password(index_number):
         {"$set": {"password": generate_password_hash(data.get("newPassword", ""))}}
     )
     return jsonify({"message": "Password updated"}), 200
+
+@app.route('/student/<index_number>/force-reset', methods=['PUT'])
+def force_reset_password(index_number):
+    index_number = index_number.upper()
+    student = students_collection.find_one({"indexNumber": index_number})
+    if not student:
+        return jsonify({"error": "Not found"}), 404
+    
+    new_hash = generate_password_hash("student123")
+    students_collection.update_one(
+        {"indexNumber": index_number},
+        {"$set": {"password": new_hash}}
+    )
+    return jsonify({"message": "Password reset"}), 200
 
 @app.route('/student/send-otp', methods=['POST'])
 def handle_otp_request():
